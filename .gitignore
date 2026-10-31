@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Datasets and cache (too large / local data)
+dataset_2/
+cache_landmarks/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code local state
+.vscode/*
+!.vscode/settings.json
+
+# Environment Variables & Secrets (Keep your API keys private!)
+.env
+.env.local
