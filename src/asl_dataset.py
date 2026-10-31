@@ -18,7 +18,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from asl_model import (D_IN, N_LM, flip_bilateral, resample, to_features)
+from .asl_model import (D_IN, N_LM, flip_bilateral, resample, to_features)
 
 MEANINGS = {
     # 1 - 40 Core Medical Signs
@@ -37,7 +37,7 @@ MEANINGS = {
 }
 
 NAME_RE = re.compile(r"(.+)_(\d{1,2})_([abc])", re.I)
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 CACHE_DIR = PROJECT_DIR / "cache_landmarks"
 
 

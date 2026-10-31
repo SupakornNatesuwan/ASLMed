@@ -60,17 +60,17 @@ Open `asl_main.py` in VS Code and click **Run Python File**, or run from the ter
 
 ---
 
-## 🛠️ Training & Dataset CLI (`asl_sign_train.py`)
+## 🛠️ Training & Dataset CLI (`train/asl_sign_train.py`)
 
 ```powershell
 # 1. Extract MediaPipe landmarks from video clips (Classes 1-50)
-python asl_sign_train.py extract --data dataset_2 --max_cls 50
+python train/asl_sign_train.py extract --data dataset_2 --max_cls 50
 
 # 2. Train final 50-class BiGRU+Attention ensemble with bilateral hand augmentation
-python asl_sign_train.py train --final --n_cls 50 --arch bigru --bilateral --epochs 80 --ensemble 2
+python train/asl_sign_train.py train --final --n_cls 50 --arch bigru --bilateral --epochs 80 --ensemble 2
 
 # 3. Record custom sign clips via webcam
-python asl_sign_train.py record --name Me --n_cls 50
+python train/asl_sign_train.py record --name Me --n_cls 50
 ```
 
 ---
@@ -79,13 +79,25 @@ python asl_sign_train.py record --name Me --n_cls 50
 
 ```text
 ASLMed/
-├── asl_main.py                # Main Desktop Application (Medical + Daily + Roboflow + Interpreter HUD)
-├── asl_sentence.py            # Expert AI Sentence Interpreter (realise & realise_variants)
-├── asl_model.py               # Neural Architectures (BiGRU, Transformer, Hybrid) & Bilateral Flip
-├── asl_dataset.py             # 50-Class Vocabulary, Landmark Extractor & Anti-Flicker Smoother
-├── asl_sign_train.py          # Unified CLI for Extract, Record, Train, CV, and Live testing
-├── asl_sign_model.pt          # Trained 50-Class PyTorch Ensemble Weights
-├── asl_sign_model.torchscript # Fast CPU TorchScript Deployment Model
-├── cache_landmarks/           # 1,046 Cached MediaPipe Landmark Sequences (.npy)
-└── dataset_2/                 # 50-Class Video Dataset (.mp4)
+├── asl_main.py                 # Main Application (run directly from VS Code / root)
+├── .env                        # Local secrets / API keys (never pushed to git)
+├── .env.example                # Template for environment configuration
+├── .gitignore                  # Git exclusions (.venv, dataset, cache, .env)
+├── requirements.txt            # Python dependencies
+├── README.md                   # Project documentation
+│
+├── src/                        # Core Application Modules & Interpreter Logic
+│   ├── asl_dataset.py          # 50-Class Vocabulary, Landmark Extractor & Smoother
+│   ├── asl_model.py            # Neural Architectures (BiGRU, Transformer, Hybrid)
+│   └── asl_sentence.py         # Expert AI Sentence Interpreter (realise & realise_variants)
+│
+├── models/                     # Trained Model Weights
+│   ├── asl_sign_model.pt       # Production PyTorch Ensemble Weights (50 classes)
+│   └── asl_sign_model.torchscript # High-speed CPU Deployment Model
+│
+├── train/                      # Training & Dataset Pipeline
+│   └── asl_sign_train.py       # Unified CLI for Extract, Record, Train & CV
+│
+├── dataset_2/                  # (Optional/Ignored) Raw video training clips (.mp4)
+└── cache_landmarks/            # (Optional/Ignored) Extracted landmark cache (.npy)
 ```

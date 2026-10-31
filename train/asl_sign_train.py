@@ -28,19 +28,23 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from asl_dataset import (
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.asl_dataset import (
     CACHE_DIR, MEANINGS, ASLDataset, LandmarkSmoother, LatestFrame,
     clean_hands, hand_speed, landmarks_from_bgr, load_landmarks_cache,
     make_holistic, normalize, parse_filename, prepare_sequence, resample, trim
 )
-from asl_model import (
+from src.asl_model import (
     D_IN, SEQ_LEN_DEFAULT, ONNXPredictor, TorchScriptPredictor,
     build_model, export_to_onnx, export_to_torchscript, to_features
 )
 
-PROJECT_DIR = Path(__file__).resolve().parent
-MODEL_PATH = str(PROJECT_DIR / "asl_sign_model.pt")
-ONNX_PATH = str(PROJECT_DIR / "asl_sign_model.onnx")
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+MODELS_DIR = PROJECT_DIR / "models"
+MODEL_PATH = str(MODELS_DIR / "asl_sign_model.pt")
+ONNX_PATH = str(MODELS_DIR / "asl_sign_model.onnx")
 TTA_CROPS = [(0.0, 0.0), (0.06, 0.0), (0.0, 0.06), (0.06, 0.06)]
 
 
@@ -357,7 +361,7 @@ def cmd_live(args):
         crops = [to_features(resample(x, False, c)) for c in TTA_CROPS]
         if args.bilateral_tta:
             # Also test horizontally flipped sequence for ambidextrous robustness
-            from asl_model import flip_bilateral
+            from src.asl_model import flip_bilateral
             x_flip = flip_bilateral(x)
             crops += [to_features(resample(x_flip, False, c)) for c in TTA_CROPS]
             

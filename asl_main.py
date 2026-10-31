@@ -53,14 +53,14 @@ import torch
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-from asl_sentence import canon, realise, realise_variants
-from asl_sign_train import (
-    D_IN, MEANINGS, MODEL_PATH, TTA_CROPS, LatestFrame, hand_speed,
-    landmarks_from_bgr, clean_hands, make_holistic, model_from_state,
-    normalize, resample, to_features, trim
+from src.asl_sentence import canon, realise, realise_variants
+from src.asl_dataset import (
+    MEANINGS, LandmarkSmoother, LatestFrame, hand_speed,
+    landmarks_from_bgr, clean_hands, make_holistic,
+    normalize, resample, trim
 )
-from asl_dataset import LandmarkSmoother
-from asl_model import TorchScriptPredictor, flip_bilateral
+from src.asl_model import D_IN, TorchScriptPredictor, flip_bilateral, to_features
+from train.asl_sign_train import MODEL_PATH, TTA_CROPS, model_from_state
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 PACE = {
