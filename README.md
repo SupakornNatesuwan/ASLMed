@@ -1,76 +1,101 @@
-# ASLMed: Real-Life Medical & Daily ASL Interpreter
+# ASLMed: Two-Way Clinical AI & Multi-Agent Sign Language Interpreter
 
-A standalone desktop American Sign Language (ASL) interpreter designed for real-life clinical and everyday communication. Run directly from VS Code (`asl_main.py`) with zero web-server overhead.
-
----
-
-## 🌟 Key Upgrades & Features
-
-1. **Direct Standalone Desktop App (`asl_main.py`)**:
-   - No web server required—just press **Run Python File** on `asl_main.py` in VS Code or run `python asl_main.py`.
-   - Features a clean split-screen OpenCV HUD with live pose/hand skeleton overlay (`S` key), real-time top-model confidence indicators (`MED`, `DAILY`, `RF`), and a multi-clause sentence interpreter panel.
-
-2. **50 Medical Signs + 18 Everyday ASL Signs (3-Way Fusion)**:
-   - **50-Class Medical Model (`MedicalModel`)**: Trained on all 1,046 clips across classes `1..50` from `dataset_2` using a Deep BiGRU + Self-Attention ensemble with Bilateral Test-Time Augmentation (TTA) for left- and right-handed signers.
-   - **Local 3D Kinematic Daily ASL Model (`DailyASLModel`)**: Uses MediaPipe 3D hand and body kinematics to recognize everyday conversation signs offline with zero latency:
-     - `"I"`, `"want"`, `"feel"`, `"hello"`, `"need"`, `"please"`, `"thank-you"`, `"sorry"`, `"yes"`, `"no"`, `"help"`, `"good"`, `"water"`, `"bathroom"`, `"my"`, `"you"`, `"where"`, `"more"`
-   - **Roboflow Cloud ASL Verifier (`RoboflowWorker`)**: Queries `asl-avoix/1` asynchronously and fuses its predictions with the local `DailyASLModel` and `MedicalModel` in `decide()`.
-
-3. **Expert AI Sentence Interpreter (`asl_sentence.py`)**:
-   - **Flexible, Non-Rigid Grammar**: Accepts signs in any natural ASL order without dropping words.
-   - **Context-Aware Linking**: Automatically connects desires/requests (`want`, `need`) with treatments (`pill`, `medicine`, `water`, `doctor`) and reasons (`headache`, `fever`, `pain`):
-     - `["I", "want", "pill", "headache"]` $\rightarrow$ *"I want a pill for my headache."* (or press `TAB` for *"I have a headache, so I want a pill."*)
-     - `["I", "feel", "headache", "want", "pill"]` $\rightarrow$ *"I feel a headache, and I want a pill."*
-     - `["hello", "doctor", "I", "feel", "dizzy", "need", "water"]` $\rightarrow$ *"Hello, Doctor — I feel dizzy, and I need water."*
-   - **Alternative Phrasings (`TAB` Key)**: Press `TAB` at any time to cycle through smooth alternative English interpretations of the current signed words.
+A standalone desktop American Sign Language (ASL) medical interpreter and two-way communication system designed for real-life hospital emergency departments, outpatient clinics, and everyday communication. Runs directly from VS Code (`asl_main.py` or `./run.sh`) with zero web-server overhead.
 
 ---
 
-## 🚀 Quick Start (Run in VS Code)
+## 🌟 Key Upgrades & Two-Way Features
 
-### 1. Configuration (Roboflow API Key)
-Copy `.env.example` to `.env` and insert your Roboflow API key:
-```powershell
-Copy-Item .env.example .env
+### 1. Two-Way Doctor-Patient Communication Suite (`src/asl_clinical_agents.py`)
+- **Split Clinical Mode (`--mode split`, Default)**:
+  - Divides the screen into two live panes: **Patient View** on the left and **Doctor Clinical HUD** on the right.
+  - Doctor and deaf/hard-of-hearing patient can look at the screen simultaneously and communicate with zero delay!
+  - Cycle views anytime by pressing **`D`**: `Split Mode` $\rightarrow$ `Doctor Mode` $\rightarrow$ `Patient Mode` $\rightarrow$ `Split Mode`.
+- **Doctor Speech-to-Card & Text-to-Card AI (`DoctorVoiceWorker` & `DoctorConsoleWorker`)**:
+  - Doctor can **speak naturally** into the microphone or **type any sentence in Terminal**.
+  - The AI parses the doctor's words and displays the corresponding visual card on the patient's screen immediately:
+    - 💊 *"The nurse will bring medicine now"* $\rightarrow$ **[MED] Medication is Coming**
+    - 💉 *"We need to draw a blood sample"* $\rightarrow$ **[BLD] Blood Test Needed**
+    - 🩻 *"Taking you to imaging for x-ray"* $\rightarrow$ **[XRY] X-Ray / Scan Scheduled**
+    - ⏱️ *"Please wait about 10 minutes"* $\rightarrow$ **[WAIT] Please Wait ~10 Minutes**
+    - 🩺 *"Doctor is examining your breathing"* $\rightarrow$ **[DOC] Doctor is Examining You**
+    - 💧 *"Water is being brought for you"* $\rightarrow$ **[H2O] Water is on the Way**
+    - 👍 *"You are safe with our team"* $\rightarrow$ **[SAFE] You are Safe With Us**
+    - ❓ *"Where does it hurt the most? Point here"* $\rightarrow$ **[LOC] Where Does it Hurt Most?**
+    - 🍽️ *"Are you fasting or have you eaten?"* $\rightarrow$ **[FST] Fasting / Eating Status**
+    - ⚠️ *"Do you have any drug allergies?"* $\rightarrow$ **[ALG] Any Known Drug Allergies?**
+  - **Dynamic Custom Cards**: Any custom sentence typed or spoken by the doctor is automatically converted into an on-screen doctor card!
+
+### 2. Patient Fingerspelling & Manual Alphabet Engine (`src/asl_fingerspelling.py`)
+- Allows patients to spell out specific medication names, proper nouns, or symptoms letter-by-letter (A–Z) using 3D hand landmarks or keyboard.
+- Automatically matches spelled words against clinical databases (e.g., `ASPIRIN`, `TYLENOL`, `PANADOL`, `AMOXICILLIN`, `PENICILLIN`) and routes them to the **Drug Safety Agent**!
+
+### 3. Clinical Multi-Agent Intelligence & Diagnostic Co-Pilot
+- **Diagnostic Reasoning Agent (DDx)**: Generates real-time Differential Diagnosis (top 3 medical hypotheses), recommended diagnostic workup (e.g. 12-Lead EKG, Troponin, CXR), and physician inquiry prompts.
+- **Triage Agent (ESI Levels 1-5)**: Real-time Emergency Severity Index classification, target response windows, and vital panels.
+- **Drug Safety & Allergy Agent**: Automated contraindication checks (Asthma/AERD with NSAIDs, Pregnancy, Peptic Ulcers, Penicillin).
+- **Clinical Scribe Agent**: Generates standardized medical **SOAP Documentation** (Subjective, Objective, Assessment, Plan).
+
+### 4. Neural Softmax & Facial Biometric AI Vectors
+- **Live Neural Confidence Distribution**: Visualizes real-time softmax probability bars from BiGRU+Attention, Roboflow, and Contextual Markov Intent models.
+- **MediaPipe 468-Point FaceMesh Biometrics**: Real-time feature vectors (Brow Tension, Eye Squint, Mouth Grimace, Pain Scale 1-10, and ASL Non-Manual grammatical markers).
+
+### 5. Large-Screen High-Definition Interface
+- Automatically launches in a high-resolution, widescreen window (`1280x920`), fully resizable and maximizable to any display or projector.
+
+### 6. Medical Encounter Exporter (`src/asl_session_exporter.py`)
+- Press **`E`** to export a complete clinical session to `exports/`:
+  - **Clinical Markdown (`.md`)**: Full formatted SOAP note, differential diagnosis, triage classification, safety alerts, and interaction audit trail.
+  - **EHR/EMR JSON (`.json`)**: Structured payload for hospital information systems.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Environment Setup
+```bash
+# Using uv (fastest) or standard venv:
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+cp .env.example .env
 ```
-Open `.env` and set your key:
-```env
-ROBOFLOW_API_KEY="your_roboflow_api_key_here"
-ROBOFLOW_API_URL="https://serverless.roboflow.com"
-```
-*(If no API key is provided, the app will still run smoothly using the offline 50-sign Medical Model and 18-sign local kinematic Daily ASL model).*
 
 ### 2. Launch Application
-Open `asl_main.py` in VS Code and click **Run Python File**, or run from the terminal:
+```bash
+# Easy launcher:
+./run.sh
 
-```powershell
-& "c:\Users\atiwa\OneDrive\Desktop\ASLMed\.venv\Scripts\python.exe" "c:\Users\atiwa\OneDrive\Desktop\ASLMed\asl_main.py"
+# Or with custom options (Default opens in Two-Way Split Mode):
+python asl_main.py --mode split --conditions asthma --allergies penicillin
 ```
 
-### Keyboard Controls (`asl_main.py`)
+### 3. Keyboard Controls
 | Key | Action |
 | :--- | :--- |
-| **`SPACE`** | Manual start / stop sign capture |
-| **`TAB`** | Cycle alternative natural sentence phrasings |
-| **`BACKSPACE`** | Delete the last signed word |
-| **`C`** or **`ENTER`** | Clear the current word list and start a new sentence |
-| **`S`** | Toggle live MediaPipe hand & pose skeleton overlay |
-| **`[` / `]`** | Decrease / increase Medical vs. Daily model priority (`alpha`) |
-| **`Q` / `ESC`** | Quit the application |
+| **`D`** | **Cycle Display Mode** (`Split Two-Way View` $\rightarrow$ `Doctor Dashboard` $\rightarrow$ `Patient View`) |
+| **`T`** | **Open Doctor Quick-Reply Menu** (Press `1`–`9`, `0` to send visual cards to patient) |
+| **`/`** | **Type Custom Doctor Message** (Type any English/Thai message in terminal to send to patient) |
+| **`E`** | **Export Encounter Report** to `exports/` (`.md` and `.json`) |
+| **`1` / `2` / `3`** | **Smart Intent Quick Pick** (Accept top suggested next sign) |
+| **`ENTER`** | Speak current sentence aloud |
+| **`TAB`** | Cycle alternative natural phrasing styles |
+| **`BACKSPACE`** | Delete last signed word |
+| **`C`** | Clear current words and spelled letters |
+| **`R`** | Repeat last spoken sentence |
+| **`A`** | Accept uncertain / borderline sign |
+| **`S`** | Toggle glowing skeleton overlay |
+| **`V`** | Toggle Text-to-Speech voice on / off |
+| **`Q` / `ESC`** | Quit application |
 
 ---
 
-## 🛠️ Training & Dataset CLI (`train/asl_sign_train.py`)
+## 🧪 Testing
 
-```powershell
-# 1. Extract MediaPipe landmarks from video clips (Classes 1-50)
-python train/asl_sign_train.py extract --data dataset_2 --max_cls 50
+Run the automated test suite (64 unit tests covering two-way communication, fingerspelling, clinical agents, triage, face mesh, session export, and models):
 
-# 2. Train final 50-class BiGRU+Attention ensemble with bilateral hand augmentation
-python train/asl_sign_train.py train --final --n_cls 50 --arch bigru --bilateral --epochs 80 --ensemble 2
-
-# 3. Record custom sign clips via webcam
-python train/asl_sign_train.py record --name Me --n_cls 50
+```bash
+pytest tests/ -v
 ```
 
 ---
@@ -79,25 +104,35 @@ python train/asl_sign_train.py record --name Me --n_cls 50
 
 ```text
 ASLMed/
-├── asl_main.py                 # Main Application (run directly from VS Code / root)
+├── asl_main.py                 # Main Application with Two-Way Split Mode & Multi-Agent HUD
+├── run.sh                      # One-click execution script
 ├── .env                        # Local secrets / API keys (never pushed to git)
 ├── .env.example                # Template for environment configuration
-├── .gitignore                  # Git exclusions (.venv, dataset, cache, .env)
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # Project documentation
 │
-├── src/                        # Core Application Modules & Interpreter Logic
+├── src/                        # Core Application Modules & Multi-Agent Engine
+│   ├── asl_clinical_agents.py  # Two-Way Doctor Agent, Triage (ESI 1-5), Drug Safety, SOAP Scribe
+│   ├── asl_fingerspelling.py   # Fingerspelling & Manual Alphabet Engine (A-Z, Drug matching)
+│   ├── asl_session_exporter.py # Clinical Session & Report Exporter (.md, .json)
+│   ├── asl_face_mesh.py        # Facial Pain Grimace (1-10) & Non-Manual Marker Analyzer
+│   ├── asl_intent.py           # Smart Intent Engine (Context Priors & Softened Thresholds)
+│   ├── asl_ui.py               # Two-Way Split HUD, Dark Glassmorphism & Visual Cards
 │   ├── asl_dataset.py          # 50-Class Vocabulary, Landmark Extractor & Smoother
 │   ├── asl_model.py            # Neural Architectures (BiGRU, Transformer, Hybrid)
-│   └── asl_sentence.py         # Expert AI Sentence Interpreter (realise & realise_variants)
+│   └── asl_sentence.py         # AI Sentence Interpreter (realise & realise_variants)
 │
 ├── models/                     # Trained Model Weights
 │   ├── asl_sign_model.pt       # Production PyTorch Ensemble Weights (50 classes)
 │   └── asl_sign_model.torchscript # High-speed CPU Deployment Model
 │
-├── train/                      # Training & Dataset Pipeline
-│   └── asl_sign_train.py       # Unified CLI for Extract, Record, Train & CV
+├── tests/                      # Automated Unit Test Suite (64 tests)
+│   ├── test_asl_two_way.py     # Two-Way Doctor Cards, Intent Parsing, Fingerspelling, Split View
+│   ├── test_asl_clinical.py    # Clinical Agents, Triage, Face Mesh, Session Exports
+│   ├── test_asl_main_logic.py  # UI Dashboard, Segmenter, Intent Engine Logic
+│   ├── test_asl_model.py       # PyTorch Forward, Features, Dimensions, TorchScript
+│   ├── test_asl_dataset.py     # Smoothing, Hands, Normalization, Trim, Speed
+│   └── test_asl_sentence.py    # Multi-clause, Negations, Symptoms, Phrasings
 │
-├── dataset_2/                  # (Optional/Ignored) Raw video training clips (.mp4)
-└── cache_landmarks/            # (Optional/Ignored) Extracted landmark cache (.npy)
+└── exports/                    # (Auto-generated) Exported Medical Encounter Reports (.md, .json)
 ```

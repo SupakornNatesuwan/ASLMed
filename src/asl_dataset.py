@@ -53,8 +53,10 @@ def make_holistic(complexity=1):
     )
 
 
-def landmarks_from_bgr(bgr, holistic):
-    """Process single BGR frame -> (67, 3) landmark array; NaN where missing."""
+def landmarks_from_bgr(bgr, holistic, return_face=False):
+    """Process single BGR frame -> (67, 3) landmark array; NaN where missing.
+    If return_face=True, returns (lm_67, face_pts_468).
+    """
     res = holistic.process(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
     out = np.full((N_LM, 3), np.nan, np.float32)
 
@@ -66,6 +68,12 @@ def landmarks_from_bgr(bgr, holistic):
     fill(res.pose_landmarks, 0, 25)
     fill(res.left_hand_landmarks, 25, 46)
     fill(res.right_hand_landmarks, 46, 67)
+
+    if return_face:
+        face_pts = None
+        if res.face_landmarks:
+            face_pts = np.array([[l.x, l.y, l.z] for l in res.face_landmarks.landmark], dtype=np.float32)
+        return out, face_pts
     return out
 
 
@@ -228,12 +236,25 @@ class LatestFrame(threading.Thread if 'threading' in globals() else object):
         import threading
         super().__init__(daemon=True)
         self.cap = cv2.VideoCapture(cam)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.is_opened = self.cap.isOpened()
+        # Fallback to alternate camera indices if primary requested index is not available
+        if not self.is_opened and isinstance(cam, int):
+            for alt_idx in [0, 1, 2]:
+                if alt_idx != cam:
+                    alt_cap = cv2.VideoCapture(alt_idx)
+                    if alt_cap.isOpened():
+                        self.cap = alt_cap
+                        self.is_opened = True
+                        break
+                    alt_cap.release()
+        if self.is_opened:
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.frame, self.n, self.alive = None, 0, True
         self.lock = threading.Lock()
-        self.start()
+        if self.is_opened:
+            self.start()
 
     def run(self):
         import time

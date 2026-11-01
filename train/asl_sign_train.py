@@ -37,39 +37,10 @@ from src.asl_dataset import (
     make_holistic, normalize, parse_filename, prepare_sequence, resample, trim
 )
 from src.asl_model import (
-    D_IN, SEQ_LEN_DEFAULT, ONNXPredictor, TorchScriptPredictor,
-    build_model, export_to_onnx, export_to_torchscript, to_features
+    D_IN, MODEL_PATH, ONNX_PATH, SEQ_LEN_DEFAULT, TTA_CROPS,
+    ONNXPredictor, TorchScriptPredictor, build_model, export_to_onnx,
+    export_to_torchscript, get_device, model_from_state, to_features
 )
-
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-MODELS_DIR = PROJECT_DIR / "models"
-MODEL_PATH = str(MODELS_DIR / "asl_sign_model.pt")
-ONNX_PATH = str(MODELS_DIR / "asl_sign_model.onnx")
-TTA_CROPS = [(0.0, 0.0), (0.06, 0.0), (0.0, 0.06), (0.06, 0.06)]
-
-
-def get_device():
-    if torch.cuda.is_available():
-        return "cuda"
-    mps = getattr(torch.backends, "mps", None)
-    return "mps" if mps and mps.is_available() else "cpu"
-
-
-def model_from_state(state, dev="cpu"):
-    """Load model dynamically from state_dict (auto-detects 40/50 classes & architecture)."""
-    n_cls = 40
-    for k, v in state.items():
-        if k.endswith("head.1.weight") or k.endswith("head.2.weight"):
-            n_cls = v.shape[0]
-            break
-    arch = "bigru"
-    if any(k.startswith("transformer") for k in state):
-        arch = "transformer"
-    elif any(k.startswith("conv1") for k in state):
-        arch = "hybrid"
-    m = build_model(arch=arch, d_in=D_IN, n_cls=n_cls).to(dev)
-    m.load_state_dict(state)
-    return m.eval()
 
 
 # ============================ Landmark Extraction ============================

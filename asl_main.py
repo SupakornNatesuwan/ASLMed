@@ -59,14 +59,30 @@ from src.asl_dataset import (
     landmarks_from_bgr, clean_hands, make_holistic,
     normalize, resample, trim
 )
-from src.asl_model import D_IN, TorchScriptPredictor, flip_bilateral, to_features
-from train.asl_sign_train import MODEL_PATH, TTA_CROPS, model_from_state
+from src.asl_model import (
+    D_IN, MODEL_PATH, TTA_CROPS, TorchScriptPredictor,
+    flip_bilateral, model_from_state, to_features
+)
+from src.asl_intent import SmartIntentEngine
+from src.asl_ui import render_modern_dashboard, wrap_text as wrap
+from src.asl_face_mesh import FaceMeshAnalyzer
+from src.asl_fingerspelling import FingerspellingEngine
+from src.asl_clinical_agents import (
+    TriageAgent, TriageAssessment,
+    DrugSafetyAgent, DrugSafetyAlert,
+    ClinicalScribeAgent,
+    TwoWayDoctorAgent,
+    DoctorConsoleWorker,
+    DoctorVoiceWorker,
+    DiagnosticAgent, ClinicalDiagnosis,
+)
+from src.asl_session_exporter import ClinicalSession
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 PACE = {
-    "slow":   dict(still_gap=0.90, end_gap=0.50, cooldown=0.90, min_dur=0.50, max_seg=5.0),
-    "normal": dict(still_gap=0.65, end_gap=0.38, cooldown=0.55, min_dur=0.42, max_seg=4.5),
-    "fast":   dict(still_gap=0.48, end_gap=0.28, cooldown=0.30, min_dur=0.38, max_seg=4.0),
+    "slow":   dict(still_gap=0.45, end_gap=0.26, cooldown=0.18, min_dur=0.28, max_seg=4.5),
+    "normal": dict(still_gap=0.26, end_gap=0.16, cooldown=0.10, min_dur=0.18, max_seg=4.0),
+    "fast":   dict(still_gap=0.16, end_gap=0.11, cooldown=0.06, min_dur=0.14, max_seg=3.5),
 }
 QUICK_WORDS = {
     ord("h"): "hello", ord("f"): "feel", ord("n"): "need",
@@ -226,79 +242,79 @@ class DailyASLModel:
                 both_dy = float((lw[-1, 1] - lw[0, 1] + rw[-1, 1] - rw[0, 1]) / 2.0)
 
                 # HELP: Two hands together in front of torso lifting UPWARD
-                if float(inter_wrist.min()) < 0.48 and both_dy < -0.08 and pos_med[1] > -0.15:
-                    scores["help"] = min(0.88, 0.62 + abs(both_dy) * 0.8)
+                if float(inter_wrist.min()) < 0.55 and both_dy < -0.06 and pos_med[1] > -0.20:
+                    scores["help"] = min(0.90, 0.65 + abs(both_dy) * 0.8)
 
                 # MORE: Both hands bringing fingertips together at midline
-                if min_tip_d < 0.28 and start_tip_d > end_tip_d + 0.10 and pos_med[1] > -0.10:
-                    scores["more"] = 0.82
+                if min_tip_d < 0.35 and start_tip_d > end_tip_d + 0.08 and pos_med[1] > -0.15:
+                    scores["more"] = 0.84
 
                 # WANT: Both hands open/clawed in neutral space pulling inward/down
                 l_ext = self._finger_ext(lh)
                 r_ext = self._finger_ext(rh)
-                if (l_ext > 1.38).sum() >= 3 and (r_ext > 1.38).sum() >= 3:
-                    if float(inter_wrist.mean()) > 0.35 and 0.0 <= pos_med[1] <= 0.75:
-                        scores["want"] = 0.78
+                if (l_ext > 1.30).sum() >= 2 and (r_ext > 1.30).sum() >= 2:
+                    if float(inter_wrist.mean()) > 0.30 and -0.10 <= pos_med[1] <= 0.80:
+                        scores["want"] = 0.80
 
                 # GOOD: One hand starts at mouth and moves down to the other hand
-                if dist_mouth_start < 0.42 and dy > 0.12 and min_tip_d < 0.42:
+                if dist_mouth_start < 0.48 and dy > 0.08 and min_tip_d < 0.48:
                     scores["good"] = 0.82
 
         # ---- Single-Handed Daily Signs ----
         if not both_hands:
             # HELLO: Open hand near forehead/temple/eye level moving outward or waving
-            if is_open and (pos_start[1] < nose[1] + 0.15 or dist_nose < 0.45):
-                if outward_dx > 0.06 or x_osc > 0.22:
-                    scores["hello"] = 0.86
+            if (is_open or n_ext >= 2) and (pos_start[1] < nose[1] + 0.22 or dist_nose < 0.52):
+                if outward_dx > 0.04 or x_osc > 0.18:
+                    scores["hello"] = 0.88
 
             # THANK-YOU: Open hand starting near chin/mouth and moving forward/downward
-            if is_open and dist_mouth_start < 0.40 and dy > 0.10 and pos_end[1] > mouth[1] + 0.08:
-                scores["thank-you"] = 0.85
+            if (is_open or n_ext >= 2) and dist_mouth_start < 0.48 and dy > 0.08 and pos_end[1] > mouth[1] + 0.05:
+                scores["thank-you"] = 0.86
 
-            # WATER: 'W' handshape (3 fingers up) tapping near chin/mouth
-            if is_w_shape and dist_mouth_med < 0.42:
+            # WATER: 'W' handshape (3 fingers up) or 2+ fingers tapping near chin/mouth
+            if (is_w_shape or (ext[0] > 1.42 and ext[1] > 1.42)) and dist_mouth_med < 0.48:
                 scores["water"] = 0.86
 
             # FEEL: Hand on chest moving UPWARD (middle finger or open palm brushing up chest)
-            if (dist_chest < 0.45 or dist_tip_chest < 0.40) and dy < -0.09 and pos_med[1] > -0.15:
-                scores["feel"] = 0.84
+            if (dist_chest < 0.52 or dist_tip_chest < 0.46) and dy < -0.06 and pos_med[1] > -0.20:
+                scores["feel"] = 0.85
 
             # PLEASE: Open flat hand rubbing chest in a circle
-            if is_open and (dist_chest < 0.42 or dist_tip_chest < 0.38) and path_len > 0.42 and abs(dy) < 0.18:
-                scores["please"] = 0.82
+            if is_open and (dist_chest < 0.48 or dist_tip_chest < 0.45) and path_len > 0.32:
+                scores["please"] = 0.84
 
             # SORRY: Closed fist rubbing chest in a circle
-            if is_fist and dist_chest < 0.42 and path_len > 0.38:
-                scores["sorry"] = 0.82
+            if is_fist and (dist_chest < 0.48 or dist_tip_chest < 0.45) and path_len > 0.30:
+                scores["sorry"] = 0.84
 
             # I: Pinky extended OR index pointing inward at chest center with low motion
-            if dist_tip_chest < 0.36 and path_len < 0.40:
-                if is_pinky_only or is_index_only or n_ext == 1:
-                    scores["i"] = 0.84
+            if (dist_tip_chest < 0.42 or dist_chest < 0.45) and path_len < 0.48:
+                if is_pinky_only or is_index_only or n_ext <= 2:
+                    scores["i"] = 0.85
                 elif is_open:
-                    scores["my"] = 0.80
+                    scores["my"] = 0.82
 
             # NEUTRAL SPACE SIGNS (away from face and chest center)
-            in_neutral = (dist_nose > 0.42 and dist_mouth_med > 0.38 and dist_tip_chest > 0.32)
+            in_neutral = (dist_nose > 0.38 and dist_mouth_med > 0.34 and dist_tip_chest > 0.28)
             if in_neutral:
                 # YES: Fist nodding up and down in neutral space
-                if is_fist and y_osc > 0.22 and y_osc >= x_osc * 0.9:
-                    scores["yes"] = 0.80
+                if is_fist and y_osc > 0.16 and y_osc >= x_osc * 0.8:
+                    scores["yes"] = 0.82
                 # BATHROOM: Fist shaking side-to-side in neutral space
-                elif is_fist and x_osc > 0.28 and x_osc > y_osc * 1.2:
-                    scores["bathroom"] = 0.78
+                elif (is_fist or n_ext <= 1) and x_osc > 0.22 and x_osc > y_osc * 1.1:
+                    scores["bathroom"] = 0.80
                 # NO: Two fingers (index + middle) snapping toward thumb in neutral space
-                elif is_two_fingers and path_len < 0.55:
-                    scores["no"] = 0.78
+                elif (is_two_fingers or n_ext <= 2) and path_len < 0.65:
+                    scores["no"] = 0.80
                 # NEED: Index/hooked finger moving firmly DOWNWARD in neutral space
-                elif (is_index_only or n_ext <= 1) and dy > 0.14 and net_disp > 0.12:
-                    scores["need"] = 0.78
+                elif (is_index_only or n_ext <= 2) and dy > 0.09:
+                    scores["need"] = 0.80
                 # WHERE: Index finger wagging side-to-side in neutral space
-                elif is_index_only and x_osc > 0.30 and x_osc > y_osc * 1.2:
-                    scores["where"] = 0.80
+                elif (is_index_only or n_ext <= 2) and x_osc > 0.22 and x_osc > y_osc * 1.1:
+                    scores["where"] = 0.82
                 # YOU: Index finger pointing forward in neutral space with low motion
-                elif is_index_only and path_len < 0.38:
-                    scores["you"] = 0.78
+                elif (is_index_only or n_ext <= 2) and path_len < 0.45:
+                    scores["you"] = 0.80
 
         ranked = sorted(scores.items(), key=lambda kv: -kv[1])[:3]
         return [(canon(w), float(s)) for w, s in ranked]
@@ -372,12 +388,10 @@ def rf_votes(frames):
     return sorted(out, key=lambda x: -x[1])[:3]
 
 
-def decide(med, rf, daily, a):
+def decide(med, rf, daily, a, intent_engine=None, history=None):
     """
-    Intelligent Multi-Model Fusion (Medical 50-sign + Roboflow Daily + Local Daily Kinematic).
-    - If Roboflow and Local Daily agree on a daily sign (e.g. 'I', 'want', 'yes'), boosts confidence!
-    - Allows daily signs ('hello', 'feel', 'I', 'want', 'need', 'water', 'please', 'thank-you')
-      to win cleanly when the Medical Model has low confidence.
+    Intelligent Multi-Model Fusion (Medical 50-sign + Roboflow Daily + Local Daily Kinematic)
+    with optional Semantic Intent Boosting.
     """
     cands = {w: (p * a.med_weight, "med") for w, p in med}
 
@@ -399,11 +413,21 @@ def decide(med, rf, daily, a):
                 cands[w] = (sc, "daily")
 
     ranked = sorted(cands.items(), key=lambda kv: -kv[1][0])
-    top = [(w, s, src) for w, (s, src) in ranked[:3]]
-    if not top:
-        return False, []
-    s2 = top[1][1] if len(top) > 1 else 0.0
-    return (top[0][1] >= a.threshold and top[0][1] - s2 >= a.margin), top
+    raw_top = [(w, s, src) for w, (s, src) in ranked[:4]]
+    if not raw_top:
+        return (False, []) if intent_engine is None else (False, [], None)
+
+    if intent_engine is not None and history is not None:
+        return intent_engine.boost_candidates(
+            raw_top,
+            history,
+            base_threshold=a.threshold,
+            base_margin=a.margin
+        )
+
+    s2 = raw_top[1][1] if len(raw_top) > 1 else 0.0
+    ok = (raw_top[0][1] >= a.threshold and raw_top[0][1] - s2 >= a.margin)
+    return ok, raw_top[:3]
 
 
 # ============================ Sign Segmentation ==============================
@@ -454,7 +478,7 @@ class Segmenter:
         self.block_until = now + p["cooldown"]
         dur = body_t[-1] - body_t[0]
         shown = np.mean([(not np.isnan(f[25, 0])) or (not np.isnan(f[46, 0])) for f in body])
-        if len(body) >= 8 and dur >= p["min_dur"] and shown >= 0.5:
+        if len(body) >= 6 and dur >= p["min_dur"] and shown >= 0.40:
             return "end", (body, body_t[0], body_t[-1])
         return "cancel", None
 
@@ -633,27 +657,63 @@ def main():
     ap.add_argument("--width", type=int, default=480, help="processing width for pose/hands")
     ap.add_argument("--complexity", type=int, default=1, choices=[0, 1, 2])
     ap.add_argument("--pace", choices=list(PACE), default="normal", help="how patient the app is")
-    ap.add_argument("--threshold", type=float, default=0.48)
-    ap.add_argument("--margin", type=float, default=0.10)
-    ap.add_argument("--start_speed", type=float, default=0.48)
-    ap.add_argument("--still_speed", type=float, default=0.25)
+    ap.add_argument("--threshold", type=float, default=0.42, help="base recognition threshold")
+    ap.add_argument("--margin", type=float, default=0.06, help="confidence margin over 2nd candidate")
+    ap.add_argument("--start_speed", type=float, default=0.45)
+    ap.add_argument("--still_speed", type=float, default=0.22)
     ap.add_argument("--med_weight", type=float, default=1.0, help="raise to trust medical model more")
     ap.add_argument("--rf_weight", type=float, default=1.05, help="raise to trust Roboflow more")
     ap.add_argument("--daily_weight", type=float, default=1.0, help="raise to trust local daily ASL model more")
     ap.add_argument("--rf_conf", type=float, default=0.38)
-    ap.add_argument("--rf_grace", type=float, default=0.75, help="max wait for Roboflow after a sign")
+    ap.add_argument("--rf_grace", type=float, default=0.20, help="max wait for Roboflow after a sign")
     ap.add_argument("--model_id", default="asl-avoix/1")
     ap.add_argument("--no_roboflow", action="store_true")
     ap.add_argument("--mirror_rf", action="store_true", help="send mirrored image to Roboflow (toggle: M)")
-    ap.add_argument("--sentence_gap", type=float, default=3.2, help="seconds of silence that end a sentence")
+    ap.add_argument("--sentence_gap", type=float, default=1.4, help="seconds of silence that end a sentence")
+    ap.add_argument("--context_weight", type=float, default=0.38, help="weight of semantic intent prediction")
     ap.add_argument("--mute", action="store_true")
     ap.add_argument("--rate", type=int, default=150, help="voice speed")
     ap.add_argument("--scale", type=float, default=1.35, help="window size multiplier")
+    ap.add_argument("--mode", choices=["split", "doctor", "patient"], default="split", help="UI mode: split, doctor, or patient")
+    ap.add_argument("--conditions", nargs="*", default=[], help="pre-existing patient conditions (e.g. asthma pregnancy)")
+    ap.add_argument("--allergies", nargs="*", default=[], help="patient allergies (e.g. penicillin)")
     ap.add_argument("--debug", action="store_true")
     a = ap.parse_args()
 
     med = MedicalModel(MODEL_PATH)
     daily = DailyASLModel()
+    intent_engine = SmartIntentEngine(context_weight=a.context_weight)
+
+    # Initialize Clinical AI Agents, Fingerspelling & Session Exporter
+    face_analyzer = FaceMeshAnalyzer()
+    triage_agent = TriageAgent()
+    drug_agent = DrugSafetyAgent(patient_conditions=a.conditions, patient_allergies=a.allergies)
+    diagnostic_agent = DiagnosticAgent()
+    scribe_agent = ClinicalScribeAgent()
+    doctor_agent = TwoWayDoctorAgent()
+    fs_engine = FingerspellingEngine(commit_delay=1.5)
+    session = ClinicalSession()
+
+    ui_mode = a.mode
+    doctor_menu_open = False
+    toast_msg = None
+    toast_until = 0.0
+    last_pain_info = {"pain_score": 1, "facial_distress": False}
+    last_triage = triage_agent.assess([], "", pain_score=1)
+    last_diagnosis = diagnostic_agent.analyze([], "", pain_score=1)
+    last_raw_top = []
+    active_drug_alerts = []
+
+    def on_doctor_card(card):
+        nonlocal toast_msg, toast_until
+        toast_msg = f"Sent to Patient: [{card.icon}] {card.headline}"
+        toast_until = time.time() + 3.0
+
+    console_worker = DoctorConsoleWorker(doctor_agent, session, on_message_callback=on_doctor_card)
+    console_worker.start()
+
+    voice_worker = DoctorVoiceWorker(doctor_agent, session, on_message_callback=on_doctor_card)
+    voice_worker.start()
     rf = None
     if not a.no_roboflow:
         key = os.environ.get("ROBOFLOW_API_KEY", "")
@@ -669,6 +729,14 @@ def main():
     speaker = Speaker(a.rate, not a.mute)
     seg = Segmenter(PACE[a.pace], a.start_speed, a.still_speed)
     cam = LatestFrame(a.cam)
+    if not cam.is_opened:
+        print(f"\n[ERROR] Cannot open webcam at index {a.cam}!")
+        if sys.platform == "darwin":
+            print("  * On macOS: Enable Camera permission for Terminal / VS Code in:")
+            print("    System Settings > Privacy & Security > Camera")
+        print("  * If you have an external or alternate camera, try running:")
+        print("    python asl_main.py --cam 1\n")
+        return
     hol = make_holistic(a.complexity)
     smoother = LandmarkSmoother(alpha=0.65)
 
@@ -677,23 +745,49 @@ def main():
     style_idx = 0
     words, log = [], []
     pending, unsure = None, None
-    status, status_col, cand_txt = "Ready - sign a word", (170, 170, 170), ""
+    status, status_type, cand_txt = "Ready - sign a word", "ready", ""
     status_until, last_word_t, last_rf_sub = 0.0, 0.0, 0.0
     last_n, fps, prev_t = -1, 0.0, None
     sentence, alt_sentence = "", ""
+    suggestions = intent_engine.predict_next_candidates([], top_k=3)
 
     def update_sentences():
-        nonlocal sentence, alt_sentence
-        vars_ = realise_variants([x["w"] for x in words])
+        nonlocal sentence, alt_sentence, suggestions, last_triage, active_drug_alerts, last_diagnosis
+        current_words = [x["w"] for x in words]
+        vars_ = realise_variants(current_words)
         if not vars_:
             sentence, alt_sentence = "", ""
         else:
             sentence = vars_[style_idx % len(vars_)]
             alt_sentence = vars_[(style_idx + 1) % len(vars_)] if len(vars_) > 1 else ""
+        suggestions = intent_engine.predict_next_candidates(current_words, top_k=3)
+
+        # Update clinical triage
+        last_triage = triage_agent.assess(
+            recognized_signs=current_words,
+            interpreted_text=sentence,
+            pain_score=last_pain_info.get("pain_score", 1),
+            facial_distress=last_pain_info.get("facial_distress", False),
+        )
+        session.record_triage(last_triage)
+
+        # Update drug safety
+        active_drug_alerts = drug_agent.evaluate(sentence + " " + " ".join(current_words))
+        session.set_drug_alerts(active_drug_alerts)
+
+        # Update AI Clinical Diagnostic Reasoning (DDx)
+        last_diagnosis = diagnostic_agent.analyze(
+            signs=current_words,
+            interpreted_sentence=sentence,
+            pain_score=last_pain_info.get("pain_score", 1),
+            triage_category=last_triage.category,
+        )
+        session.set_diagnosis(last_diagnosis)
 
     def push(word, src, score):
         nonlocal last_word_t
         words.append(dict(w=word, src=src, s=score))
+        session.record_sign(word, score)
         last_word_t = time.time()
         update_sentences()
 
@@ -705,9 +799,28 @@ def main():
             log.append(text)
             if speak:
                 speaker.say(text)
+            session.record_sentence(
+                sentence=text,
+                pain_score=last_pain_info.get("pain_score", 1),
+                facial_distress=last_pain_info.get("facial_distress", False),
+            )
+            scribe_agent.record_utterance(
+                raw_signs=[x["w"] for x in words],
+                interpreted=text,
+                pain_score=last_pain_info.get("pain_score", 1),
+                distress=last_pain_info.get("facial_distress", False),
+                question_marker=last_pain_info.get("question_marker"),
+            )
+            soap_note = scribe_agent.generate_soap_note(last_triage, active_drug_alerts)
+            session.set_soap_note(soap_note)
             words.clear()
             sentence, alt_sentence = "", ""
             style_idx = 0
+            update_sentences()
+
+    WINDOW_TITLE = "ASLMed - Multi-Agent Clinical AI Co-Pilot & Interpreter"
+    cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WINDOW_TITLE, 1280, 920)
 
     while True:
         frame, n = cam.get()
@@ -725,12 +838,45 @@ def main():
         if frame.shape[1] > a.width:
             s = a.width / frame.shape[1]
             small = cv2.resize(frame, None, fx=s, fy=s)
-        raw_lm = smoother.update(landmarks_from_bgr(small, hol))
+        raw_lm, face_pts = landmarks_from_bgr(small, hol, return_face=True)
+        raw_lm = smoother.update(raw_lm)
         lm = clean_hands(raw_lm[None], need_shoulders=True)[0]
+        last_pain_info = face_analyzer.update(face_pts)
+
+        # 3D Hand Fingerspelling Check (when not active in whole-body sign)
+        if not seg.active and lm is not None:
+            detected_letter = None
+            for base in (46, 25):
+                hand_pts = lm[base:base + 21]
+                if not np.isnan(hand_pts[0, 0]):
+                    detected_letter = fs_engine.classify_hand_shape(hand_pts)
+                    if detected_letter:
+                        break
+            if detected_letter:
+                if detected_letter == fs_engine.last_letter:
+                    fs_engine.letter_hold_count += 1
+                    if fs_engine.letter_hold_count == 4:
+                        fs_engine.push_letter(detected_letter, now)
+                        status, status_type = f"Spelling: {fs_engine.get_spelled_word()}", "signing"
+                        status_until = now + 1.0
+                else:
+                    fs_engine.last_letter = detected_letter
+                    fs_engine.letter_hold_count = 1
+            else:
+                fs_engine.last_letter = None
+                fs_engine.letter_hold_count = 0
+
+        # Auto-commit fingerspelled words into signed glosses
+        spelled_word = fs_engine.check_auto_commit(now)
+        if spelled_word:
+            push(spelled_word, "fingerspelling", 0.99)
+            status, status_type = f"Spelled: {spelled_word.upper()}", "recognized"
+            status_until = now + 1.5
+
         ev, payload = seg.update(lm, now)
 
         if ev == "start":
-            status, status_col, cand_txt = "Signing...", (0, 255, 255), ""
+            status, status_type, cand_txt = "Signing...", "signing", ""
             status_until = 0.0
         if seg.active and rf is not None and now - last_rf_sub > 0.1:
             rf.submit(frame, now, mirror_rf)
@@ -744,43 +890,121 @@ def main():
                 created=now,
                 last_sub=rf.last_submit_t if rf else 0.0
             )
-            status, status_col = "Reading sign...", (0, 255, 255)
+            status, status_type = "Analyzing...", "signing"
         elif ev == "cancel":
-            status, status_col = "Ready - sign a word", (170, 170, 170)
+            status, status_type = "Ready - sign a word", "ready"
 
         if pending:
             rf_ok = rf is not None and not rf.error
             if (not rf_ok) or rf.last_done_t >= pending["last_sub"] or now - pending["created"] > a.rf_grace:
                 votes = rf_votes(rf.between(pending["t0"] - 0.05, pending["t1"] + 0.05)) if rf_ok else []
-                ok, top = decide(pending["med"], votes, pending["daily"], a)
+                history = [x["w"] for x in words]
+                ok, top, hint = decide(pending["med"], votes, pending["daily"], a, intent_engine=intent_engine, history=history)
                 cand_txt = "   ".join(f"{w} {s * 100:.0f}% ({src})" for w, s, src in top)
+                last_raw_top = top
                 if ok:
                     push(top[0][0], top[0][2], top[0][1])
-                    status, status_col, unsure = f"{top[0][0].upper()} ({top[0][2]})", (0, 255, 0), None
+                    is_inferred = "intent" in top[0][2]
+                    status = f"Recognized: {top[0][0].upper()}"
+                    status_type = "inferred" if is_inferred else "recognized"
+                    unsure = None
+                    status_until = now + 1.2
+                elif hint:
+                    unsure = top[0] if top else None
+                    status = f"Intent likely: {hint.upper()} (Press A)"
+                    status_type = "inferred"
+                    status_until = now + 1.8
                 else:
                     unsure = top[0] if top else None
-                    status = f"Not sure ({top[0][0]}?) - sign again, or press A" if top else "Not sure - sign again"
-                    status_col = (0, 165, 255)
-                status_until = now + 3.5
+                    status = f"Not sure ({top[0][0]}?) - Press A" if top else "Not sure - sign again"
+                    status_type = "unsure"
+                    status_until = now + 1.8
                 pending = None
 
         if status_until and now > status_until and not seg.active and not pending:
-            status, status_col, cand_txt, status_until = "Ready - sign a word", (170, 170, 170), "", 0.0
+            status, status_type, cand_txt, status_until = "Ready - sign a word", "ready", "", 0.0
         elif not seg.active and not pending and now < seg.block_until and not status_until:
-            status, status_col = "...", (120, 120, 120)
+            status, status_type = "...", "ready"
 
         # A pause after the last word ends and speaks the sentence
         if words and not seg.active and not pending and now - last_word_t > a.sentence_gap:
             finish(True)
 
-        canvas = render(
-            frame, raw_lm, show_skel, a, now, seg, status, status_col, cand_txt,
-            words, sentence, alt_sentence, log, rf, speaker, fps
+        active_toast = toast_msg if (toast_until and now < toast_until) else None
+        canvas = render_modern_dashboard(
+            frame=frame,
+            lm=lm if show_skel else None,
+            show_skel=show_skel,
+            now=now,
+            status=status,
+            status_type=status_type,
+            cand_txt=cand_txt,
+            words=words,
+            sentence=sentence,
+            alt_sentence=alt_sentence,
+            suggestions=suggestions,
+            log=log,
+            speaker_active=speaker.enabled and speaker.ok,
+            fps=fps,
+            speed=seg.speed,
+            progress=seg.still_progress(now),
+            scale=a.scale,
+            triage=last_triage,
+            pain_info=last_pain_info,
+            drug_alerts=active_drug_alerts,
+            active_card=doctor_agent.active_card,
+            ui_mode=ui_mode,
+            doctor_reply_menu=doctor_menu_open,
+            toast_message=active_toast,
+            spelled_text=fs_engine.get_spelled_word(),
+            diagnosis=last_diagnosis,
+            neural_cands=last_raw_top,
         )
-        cv2.imshow("ASLMed - Expert Medical & Daily ASL Interpreter", canvas)
+        cv2.imshow(WINDOW_TITLE, canvas)
         k = cv2.waitKey(1) & 0xFF
         if k in (27, ord("q")):
             break
+        elif k == ord("d"):  # Cycle Split -> Doctor -> Patient -> Split
+            if ui_mode == "split":
+                ui_mode = "doctor"
+            elif ui_mode == "doctor":
+                ui_mode = "patient"
+            else:
+                ui_mode = "split"
+            toast_msg = f"Mode: {ui_mode.upper()}"
+            toast_until = now + 1.5
+        elif k == ord("t"):  # Toggle Doctor Quick-Reply Menu
+            doctor_menu_open = not doctor_menu_open
+        elif k == ord("e"):  # Export Clinical Encounter Documentation (.md and .json)
+            md_path = session.export_markdown()
+            session.export_json()
+            toast_msg = f"Encounter Saved: {md_path.name} & .json"
+            toast_until = now + 3.5
+        elif doctor_menu_open:
+            if ord("1") <= k <= ord("9"):
+                card_id = k - ord("0")
+                card = doctor_agent.select_card(card_id)
+                if card:
+                    session.record_doctor_reply(card.headline, card.card_id)
+                    toast_msg = f"Sent to Patient: [{card.icon}] {card.headline}"
+                    toast_until = now + 3.0
+                doctor_menu_open = False
+            elif k == ord("0"):
+                card = doctor_agent.select_card(10)
+                if card:
+                    session.record_doctor_reply(card.headline, card.card_id)
+                    toast_msg = f"Sent to Patient: [{card.icon}] {card.headline}"
+                    toast_until = now + 3.0
+                doctor_menu_open = False
+            elif k == ord("/"):
+                doctor_menu_open = False
+                toast_msg = "Doctor: Type message in terminal & press ENTER"
+                toast_until = now + 3.5
+            elif k in (27, ord("t")):
+                doctor_menu_open = False
+        elif k == ord("/"):
+            toast_msg = "Doctor: Type message in terminal & press ENTER"
+            toast_until = now + 3.5
         elif k in (10, 13):
             if words:
                 finish(True)
@@ -795,12 +1019,19 @@ def main():
             update_sentences()
         elif k == ord("c"):
             words.clear()
+            fs_engine.clear()
             update_sentences()
         elif k == ord("r") and log:
             speaker.say(log[-1])
         elif k == ord("a") and unsure:
             push(unsure[0], unsure[2], unsure[1])
             unsure = None
+        elif k in (ord("1"), ord("2"), ord("3")) and suggestions:
+            idx = k - ord("1")
+            if idx < len(suggestions):
+                push(suggestions[idx][0], "quick_pick", 0.95)
+                status, status_type = f"Quick pick: {suggestions[idx][0].upper()}", "inferred"
+                status_until = now + 1.2
         elif k == ord("v"):
             speaker.enabled = not speaker.enabled
         elif k == ord("s"):
@@ -813,6 +1044,9 @@ def main():
     cam.stop()
     if rf:
         rf.alive = False
+    console_worker.alive = False
+    voice_worker.alive = False
+    hol.close()
     cv2.destroyAllWindows()
 
 

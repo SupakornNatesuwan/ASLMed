@@ -22,6 +22,12 @@ N_CLS_DEFAULT = 40
 SEQ_LEN_DEFAULT = 48
 N_LM = 25 + 21 + 21  # 25 pose + 21 left hand + 21 right hand
 
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+MODELS_DIR = PROJECT_DIR / "models"
+MODEL_PATH = str(MODELS_DIR / "asl_sign_model.pt")
+ONNX_PATH = str(MODELS_DIR / "asl_sign_model.onnx")
+TTA_CROPS = [(0.0, 0.0), (0.06, 0.0), (0.0, 0.06), (0.06, 0.06)]
+
 # Body & Hand Anchors for Relational Features
 ANCHORS = [0, 2, 5, 9, 10, 11, 12, 13, 14, 23, 24]  # nose, eyes, mouth, shoulders, elbows, hips
 HAND_PTS = [0, 8, 12]  # wrist, index tip, middle tip
@@ -239,6 +245,33 @@ def build_model(arch="bigru", d_in=None, n_cls=N_CLS_DEFAULT):
     elif arch == "hybrid":
         return HybridConvGRU(d_in=d_in, n_cls=n_cls)
     return Net(d_in=d_in, n_cls=n_cls)
+
+
+def get_device():
+    """Detect acceleration device: MPS (Apple Silicon), CUDA, or fallback to CPU."""
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(torch.backends, "mps", None)
+    return "mps" if mps and mps.is_available() else "cpu"
+
+
+def model_from_state(state, dev=None):
+    """Load model dynamically from state_dict (auto-detects 40/50 classes & architecture)."""
+    if dev is None:
+        dev = "cpu"
+    n_cls = 40
+    for k, v in state.items():
+        if k.endswith("head.1.weight") or k.endswith("head.2.weight"):
+            n_cls = v.shape[0]
+            break
+    arch = "bigru"
+    if any(k.startswith("transformer") for k in state):
+        arch = "transformer"
+    elif any(k.startswith("conv1") for k in state):
+        arch = "hybrid"
+    m = build_model(arch=arch, d_in=D_IN, n_cls=n_cls).to(dev)
+    m.load_state_dict(state)
+    return m.eval()
 
 
 # ============================ High-Performance Inference =====================

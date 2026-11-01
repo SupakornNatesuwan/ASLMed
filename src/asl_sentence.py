@@ -392,6 +392,9 @@ def realise_variants(words):
     while len(ws) > 1 and ws[-1] in ("thank-you", "sorry", "please"):
         tail_parts.insert(0, ws.pop())
 
+    while len(ws) > 1 and ws[0] in ("please", "sorry"):
+        tail_parts.append(ws.pop(0))
+
     if ws and ws[0] in GREET:
         g = _cap(ws.pop(0))
         if ws and ws[0] in ("doctor", "nurse"):
@@ -416,7 +419,9 @@ def realise_variants(words):
                 main = main[0].lower() + main[1:]
             main = f"{prefix}, {main}"
         for t in tail_parts:
-            if t == "please" and main.endswith("."):
+            if t == "please" and "please" in main.lower():
+                continue
+            elif t == "please" and main.endswith("."):
                 main = main[:-1] + ", please."
             else:
                 main += " " + SINGLE.get(t, _cap(t) + ".")
@@ -584,7 +589,9 @@ def realise_variants(words):
                 out = out[0].lower() + out[1:]
             out = f"{prefix}, {out}"
         for t in tail_parts:
-            if t == "please" and out.endswith("."):
+            if t == "please" and "please" in out.lower():
+                continue
+            elif t == "please" and out.endswith("."):
                 out = out[:-1] + ", please."
             else:
                 out += " " + SINGLE.get(t, _cap(t) + ".")
